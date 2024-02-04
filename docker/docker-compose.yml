@@ -1,0 +1,87 @@
+version: "3"
+
+networks:
+  kafka-net:
+    name: kafka-net
+    driver: bridge
+
+services:
+  zookeeper:
+    image: docker.io/bitnami/zookeeper:3.8
+    container_name: zookeeper
+    restart: unless-stopped
+    networks:
+      - kafka-net
+    ports:
+      - "2181:2181"
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+
+  redpanda-ui:
+    image: redpandadata/console:latest
+    networks:
+      - kafka-net
+    ports:
+      - 8080:8080
+    environment:
+      - KAFKA_BROKERS=kafka:29092
+    depends_on:
+      - kafka
+
+  #  kafka-ui:
+  #    image: provectuslabs/kafka-ui:latest
+  #    ports:
+  #      - 8080:8080
+  #    networks:
+  #      - kafka-net
+  #    environment:
+  #      - KAFKA_CLUSTERS_0_NAME=local
+  #      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:29092
+  #      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+  #    depends_on:
+  #      - kafka
+
+  kafka:
+    image: docker.io/bitnami/kafka:3
+    container_name: kafka
+    restart: unless-stopped
+    networks:
+      - kafka-net
+    ports:
+      - "9092:9092"
+    environment:
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: DOCKER_INTERNAL:PLAINTEXT,DOCKER_EXTERNAL:PLAINTEXT
+      KAFKA_CFG_LISTENERS: DOCKER_INTERNAL://:29092,DOCKER_EXTERNAL://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: DOCKER_INTERNAL://kafka:29092,DOCKER_EXTERNAL://${DOCKER_HOST_IP:-127.0.0.1}:9092
+      KAFKA_CFG_INTER_BROKER_LISTENER_NAME: DOCKER_INTERNAL
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_BROKER_ID: 1
+      KAFKA_CFG_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 100
+    depends_on:
+      - zookeeper
+
+  kafka-ksqldb:
+    image: confluentinc/ksqldb-server:0.29.0
+    container_name: kafka-ksqldb
+    restart: unless-stopped
+    networks:
+      - kafka-net
+    ports:
+      - "8088:8088"
+    environment:
+      KSQL_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+      KSQL_LISTENERS: http://0.0.0.0:8088/
+      KSQL_KSQL_SERVICE_ID: kafka-ksqldb
+      KSQL_KSQL_LOGGING_PROCESSING_STREAM_AUTO_CREATE: "true"
+      KSQL_KSQL_LOGGING_PROCESSING_TOPIC_AUTO_CREATE: "true"
+      KSQL_KSQL_EXTENSION_DIR: "/data/udfs"
+    volumes:
+      - ./data/kafka-ksqldb-data/scripts:/data/scripts/
+      - ./data/kafka-ksqldb-data/udfs:/data/udfs/
+    depends_on:
+      - kafka
